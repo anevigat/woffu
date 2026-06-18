@@ -1,0 +1,75 @@
+name: Woffu Automation
+
+on:
+#   schedule:
+#     # GitHub Actions cron uses UTC.
+#     # 08:00 Atlantic/Canary (summer, WEST) == 07:00 UTC.
+#     - cron: "0 7 * * 1-5"
+
+#     # 17:00 Atlantic/Canary (summer, WEST) == 16:00 UTC (Mon-Thu).
+#     - cron: "0 16 * * 1-4"
+
+#     # 15:00 Atlantic/Canary (summer, WEST) == 14:00 UTC (Fri).
+#     - cron: "0 14 * * 5"
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to execute"
+        required: true
+        type: choice
+        options:
+          - status
+          - checkin
+          - checkout
+
+jobs:
+  run-woffu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.3
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip requests
+
+      - name: Resolve action from schedule or manual dispatch
+        id: resolve-action
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ACTION="${{ github.event.inputs.action }}"
+          else
+            case "${{ github.event.schedule }}" in
+              "0 7 * * 1-5") ACTION="checkin" ;;
+              "0 16 * * 1-4") ACTION="checkout" ;;
+              "0 14 * * 5") ACTION="checkout" ;;
+              *)
+                echo "Unsupported schedule trigger: ${{ github.event.schedule }}"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "action=$ACTION" >> "$GITHUB_OUTPUT"
+          echo "Resolved action: $ACTION"
+
+      - name: Random delay before execution
+        if: steps.resolve-action.outputs.action == 'checkin' || steps.resolve-action.outputs.action == 'checkout'
+        shell: bash
+        run: |
+          DELAY_SECONDS=$((RANDOM % 300 + 1))
+          echo "Applying random delay: ${DELAY_SECONDS}s"
+          sleep "$DELAY_SECONDS"
+
+      - name: Run Woffu script
+        env:
+          WOFFU_USER: ${{ secrets.WOFFU_USER }}
+          WOFFU_PASS: ${{ secrets.WOFFU_PASS }}
+        run: python woffu.py --action "${{ steps.resolve-action.outputs.action }}"
