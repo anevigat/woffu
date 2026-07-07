@@ -1,16 +1,16 @@
 name: Woffu Automation
 
 on:
-#   schedule:
-#     # GitHub Actions cron uses UTC.
-#     # 08:00 Atlantic/Canary (summer, WEST) == 07:00 UTC.
-#     - cron: "0 7 * * 1-5"
+  schedule:
+    # GitHub Actions cron uses UTC.
+    # 08:00 Atlantic/Canary (summer, WEST) == 07:00 UTC.
+    - cron: "0 7 * * 1-5"
 
-#     # 17:00 Atlantic/Canary (summer, WEST) == 16:00 UTC (Mon-Thu).
-#     - cron: "0 16 * * 1-4"
+    # 17:00 Atlantic/Canary (summer, WEST) == 16:00 UTC (Mon-Thu).
+    - cron: "0 16 * * 1-4"
 
-#     # 15:00 Atlantic/Canary (summer, WEST) == 14:00 UTC (Fri).
-#     - cron: "0 14 * * 5"
+    # 15:00 Atlantic/Canary (summer, WEST) == 14:00 UTC (Fri).
+    - cron: "0 14 * * 5"
 
   workflow_dispatch:
     inputs:
