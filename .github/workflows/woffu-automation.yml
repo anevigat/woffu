@@ -10,7 +10,7 @@ on:
     - cron: "0 14 * * 1-4"
 
     # 15:00 Atlantic/Canary (summer, WEST) == 14:00 UTC (Fri).
-    - cron: "0 14 * * 5"
+    - cron: "0 12 * * 5"
 
   workflow_dispatch:
     inputs:
