@@ -4,7 +4,7 @@ on:
   schedule:
     # GitHub Actions cron uses UTC.
     # 08:00 Atlantic/Canary (summer, WEST) == 07:00 UTC.
-    - cron: "0 5 * * 1-5"
+    - cron: "0 4 * * 1-5"
 
     # 17:00 Atlantic/Canary (summer, WEST) == 16:00 UTC (Mon-Thu).
     - cron: "0 14 * * 1-4"
@@ -47,7 +47,7 @@ jobs:
             ACTION="${{ github.event.inputs.action }}"
           else
             case "${{ github.event.schedule }}" in
-              "0 5 * * 1-5") ACTION="checkin" ;;
+              "0 4 * * 1-5") ACTION="checkin" ;;
               "0 14 * * 1-4") ACTION="checkout" ;;
               "0 12 * * 5") ACTION="checkout" ;;
               *)
