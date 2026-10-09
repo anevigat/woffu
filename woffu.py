@@ -24,49 +24,64 @@ def login(username, password):
     }
 
 
-def get_domain(headers):
-    """Resolve the company domain, required for the sign/requests endpoints."""
-    user = requests.get(
+def get_account(headers):
+    """Resolve the user id and company domain, required for the diary/sign endpoints."""
+    resp = requests.get(
         f"{WOFFU_BASE}/api/users", headers=headers, timeout=TIMEOUT_SECONDS
-    ).json()
-    company = requests.get(
+    )
+    resp.raise_for_status()
+    user = resp.json()
+    resp = requests.get(
         f"{WOFFU_BASE}/api/companies/{user['CompanyId']}",
         headers=headers,
         timeout=TIMEOUT_SECONDS,
-    ).json()
-    return company["Domain"]
+    )
+    resp.raise_for_status()
+    return user["UserId"], resp.json()["Domain"]
 
 
 def is_signed_in(headers):
     """Current clock state: the last sign of the day tells if we are in."""
-    signs = requests.get(
+    resp = requests.get(
         f"{WOFFU_BASE}/api/signs", headers=headers, timeout=TIMEOUT_SECONDS
-    ).json()
+    )
+    resp.raise_for_status()
+    signs = resp.json()
     return bool(signs) and bool(signs[-1].get("SignIn", False))
 
 
-def day_off_reason(headers, domain):
+def day_off_reason(headers, domain, user_id):
     """Return why today is non-working ('festivo' / 'ausencia'), or None.
 
-    Single precise call. The endpoint returns the day's requests, with public
-    holidays under the 'Holidays' key and absences/leaves under 'Requests'.
+    Single precise call. The day's diary carries the calendar holiday flag
+    ('isHoliday') and the approved absences ('absenceEvents'). Raises if
+    today's diary can't be read, so we never check in on an unverified day.
     """
-    today = datetime.now().strftime("%m/%d/%Y")  # this endpoint expects mm/dd/YYYY
+    today = datetime.now().strftime("%Y-%m-%d")
     resp = requests.get(
-        f"https://{domain}/api/svc/core/diary/user/requests",
+        f"https://{domain}/api/svc/core/diariesquery/users/{user_id}"
+        "/diaries/summary/presence",
         headers=headers,
-        params={"date": today},
+        params={
+            "userId": user_id,
+            "fromDate": today,
+            "toDate": today,
+            "pageSize": 1,
+        },
         timeout=TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
-    data = resp.json()
+    diaries = resp.json().get("diaries") or []
+    diary = next(
+        (d for d in diaries if str(d.get("date", "")).startswith(today)), None
+    )
+    if diary is None or "isHoliday" not in diary:
+        raise RuntimeError(f"No se pudo leer el diario de {today} en Woffu.")
 
-    if isinstance(data, dict):
-        if data.get("Holidays"):
-            return "festivo"
-        if data.get("Requests"):
-            return "ausencia"
-    elif isinstance(data, list) and data:
+    if diary["isHoliday"]:
+        return "festivo"
+    # Partial absences (a few hours) still need the check-in; full days don't.
+    if any(event.get("allDay") for event in diary.get("absenceEvents") or []):
         return "ausencia"
     return None
 
@@ -83,8 +98,8 @@ def toggle_sign(headers, domain):
     resp.raise_for_status()
 
 
-def action_checkin(headers, domain):
-    reason = day_off_reason(headers, domain)
+def action_checkin(headers, domain, user_id):
+    reason = day_off_reason(headers, domain, user_id)
     if reason:
         print(f"Hoy es {reason}. No se ficha la entrada.")
         return
@@ -95,7 +110,7 @@ def action_checkin(headers, domain):
     print("Entrada fichada.")
 
 
-def action_checkout(headers, domain):
+def action_checkout(headers, domain, user_id):
     if not is_signed_in(headers):
         print("No hay fichaje abierto. Nada que cerrar.")
         return
@@ -103,9 +118,9 @@ def action_checkout(headers, domain):
     print("Salida fichada.")
 
 
-def action_status(headers, domain):
+def action_status(headers, domain, user_id):
     print(f"Fichado: {'sí (dentro)' if is_signed_in(headers) else 'no (fuera)'}")
-    reason = day_off_reason(headers, domain)
+    reason = day_off_reason(headers, domain, user_id)
     print(f"Festivo/ausencia hoy: {reason if reason else 'no'}")
 
 
@@ -120,14 +135,14 @@ def main():
     args = parser.parse_args()
 
     headers = login(os.environ["WOFFU_USER"], os.environ["WOFFU_PASS"])
-    domain = get_domain(headers)
+    user_id, domain = get_account(headers)
 
     actions = {
         "checkin": action_checkin,
         "checkout": action_checkout,
         "status": action_status,
     }
-    actions[args.action](headers, domain)
+    actions[args.action](headers, domain, user_id)
 
 
 if __name__ == "__main__":
