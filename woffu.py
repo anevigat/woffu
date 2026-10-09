@@ -6,6 +6,7 @@ import requests
 
 WOFFU_BASE = "https://app.woffu.com"
 TIMEOUT_SECONDS = 30
+SLACK_NOTIFY_ON = ("1", "true", "yes", "on")
 
 
 def login(username, password):
@@ -98,30 +99,44 @@ def toggle_sign(headers, domain):
     resp.raise_for_status()
 
 
+def notify_slack(text):
+    """Post a message to Slack. Optional: only when SLACK_NOTIFY is enabled."""
+    if os.environ.get("SLACK_NOTIFY", "").strip().lower() not in SLACK_NOTIFY_ON:
+        return
+    webhook = os.environ.get("SLACK_WEBHOOK", "").strip()
+    if not webhook:
+        print("SLACK_NOTIFY está activo pero falta SLACK_WEBHOOK. No se notifica.")
+        return
+    try:
+        resp = requests.post(webhook, json={"text": text}, timeout=TIMEOUT_SECONDS)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        # A Slack failure must never break the sign. Only the error type is
+        # printed: the exception message contains the webhook URL.
+        print(f"No se pudo notificar a Slack ({type(exc).__name__}).")
+
+
 def action_checkin(headers, domain, user_id):
     reason = day_off_reason(headers, domain, user_id)
     if reason:
-        print(f"Hoy es {reason}. No se ficha la entrada.")
-        return
+        return f"Hoy es {reason}. No se ficha la entrada."
     if is_signed_in(headers):
-        print("Ya estás fichado. No se hace nada.")
-        return
+        return "Ya estás fichado. No se hace nada."
     toggle_sign(headers, domain)
-    print("Entrada fichada.")
+    return "Entrada fichada."
 
 
 def action_checkout(headers, domain, user_id):
     if not is_signed_in(headers):
-        print("No hay fichaje abierto. Nada que cerrar.")
-        return
+        return "No hay fichaje abierto. Nada que cerrar."
     toggle_sign(headers, domain)
-    print("Salida fichada.")
+    return "Salida fichada."
 
 
 def action_status(headers, domain, user_id):
-    print(f"Fichado: {'sí (dentro)' if is_signed_in(headers) else 'no (fuera)'}")
+    signed = f"Fichado: {'sí (dentro)' if is_signed_in(headers) else 'no (fuera)'}"
     reason = day_off_reason(headers, domain, user_id)
-    print(f"Festivo/ausencia hoy: {reason if reason else 'no'}")
+    return f"{signed}\nFestivo/ausencia hoy: {reason if reason else 'no'}"
 
 
 def main():
@@ -134,15 +149,25 @@ def main():
     )
     args = parser.parse_args()
 
-    headers = login(os.environ["WOFFU_USER"], os.environ["WOFFU_PASS"])
-    user_id, domain = get_account(headers)
-
     actions = {
         "checkin": action_checkin,
         "checkout": action_checkout,
         "status": action_status,
     }
-    actions[args.action](headers, domain, user_id)
+    notify = args.action != "status"  # status is read-only, nothing to report
+
+    try:
+        headers = login(os.environ["WOFFU_USER"], os.environ["WOFFU_PASS"])
+        user_id, domain = get_account(headers)
+        message = actions[args.action](headers, domain, user_id)
+    except Exception as exc:
+        if notify:
+            notify_slack(f"Woffu {args.action} falló: {type(exc).__name__}: {exc}")
+        raise
+
+    print(message)
+    if notify:
+        notify_slack(f"Woffu {args.action}: {message}")
 
 
 if __name__ == "__main__":

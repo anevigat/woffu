@@ -72,4 +72,6 @@ jobs:
         env:
           WOFFU_USER: ${{ secrets.WOFFU_USER }}
           WOFFU_PASS: ${{ secrets.WOFFU_PASS }}
+          SLACK_NOTIFY: ${{ vars.SLACK_NOTIFY }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         run: python woffu.py --action "${{ steps.resolve-action.outputs.action }}"
